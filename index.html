@@ -320,6 +320,13 @@ input[type=file]{display:none;}
       <div class="home-card" onclick="navTo('historyScreen','nav_history')">
         <div class="icon">📁</div><div class="label">History</div><div class="desc">Past quotes</div>
       </div>
+      <div class="home-card" onclick="openHelp()" style="grid-column:span 2;display:flex;align-items:center;gap:16px;padding:14px 18px;">
+        <div class="icon" style="font-size:28px;margin:0;">❓</div>
+        <div>
+          <div class="label" style="font-size:13px;">Help & Training Guide</div>
+          <div class="desc">How to use this app</div>
+        </div>
+      </div>
     </div>
     <div class="today-visits" id="todayVisitsBox">
       <div class="tv-title">📍 Today's Visits</div>
@@ -555,6 +562,7 @@ input[type=file]{display:none;}
       <!-- ACTION BUTTONS -->
       <button class="btn btn-primary" onclick="exportCSV()">📥 Export Visits CSV</button>
       <button class="btn btn-outline" onclick="document.getElementById('importExcelInput').click()">📤 Import Price List (Excel)</button>
+      <button class="btn btn-outline" onclick="openAdminManual()" style="border-color:var(--orange);color:var(--orange);">📖 Admin Technical Manual</button>
       <input type="file" id="importExcelInput" accept=".xlsx,.xls" style="display:none;" onchange="importPriceList(event)">
       <div id="importStatus" style="font-size:12px;color:var(--success);margin:4px 0 8px;display:none;padding:8px 12px;background:#e8f5e9;border-radius:8px;"></div>
 
@@ -2072,6 +2080,21 @@ function renderTodayVisits(){
       <div><strong>${v.customer}</strong>${v.city?' · '+v.city:''}</div>
       <div style="color:var(--text-light);font-size:11px;">${v.time}</div>
     </div>`).join('');
+}
+
+// ── HELP DOCUMENTS ──
+function openHelp(){
+  // Opens Sales Rep Training Guide PDF from GitHub
+  const url = 'https://raw.githubusercontent.com/Nakulchandak/field-sales/main/docs/SalesRep_Training_Guide.pdf';
+  showToast('Opening Training Guide...');
+  window.open(url, '_blank');
+}
+
+function openAdminManual(){
+  // Opens Admin Technical Manual PDF from GitHub
+  const url = 'https://raw.githubusercontent.com/Nakulchandak/field-sales/main/docs/Admin_Technical_Manual.pdf';
+  showToast('Opening Admin Manual...');
+  window.open(url, '_blank');
 }
 
 // ── TOAST ──
