@@ -909,7 +909,6 @@ function selectCustomer(inputId, suggestId, customerName){
   }
 }
 
-function populateCustomerLists(){ /* legacy - kept for compat */ }
 
 function populateProductSelect(){
   const sel = document.getElementById('productSelect');
@@ -1472,16 +1471,11 @@ function shareWhatsAppPDF(){
   </head><body>
     ${printContent}
     <div class="action-bar">
-      <a href="#" onclick="window.print();return false;" class="wa-btn" style="background:#1a3a8c;">
-        💾 Save as PDF
-      </a>
-      <a href="${waLink}" class="back-btn-pdf" style="background:#25D366;color:white;">
-        📲 Send on WhatsApp
-      </a>
-    </div>
-    <div style="text-align:center;font-size:11px;color:#888;padding:8px 16px 0;">
-      Save PDF first → then open WhatsApp → attach the saved PDF
-    </div>
+      <button onclick="doShare('${waLink}')"
+        style="width:100%;background:#25D366;color:white;border:none;padding:16px;font-size:16px;font-weight:800;cursor:pointer;border-radius:0;">
+        📲 Share Quotation via WhatsApp
+      </button>
+
   </body></html>`;
 
   // Blob URL approach - works without popup permission
@@ -1932,15 +1926,10 @@ function sharePriceListPDF(){
     </div>
 
     <div class="action-bar">
-      <a href="#" class="wa-share-btn" onclick="this.style.opacity=0.7;window.print();return false;">
-        📲 Share via WhatsApp — Save PDF then share
-      </a>
-    </div>
-    <script>
-    window.onafterprint = function(){
-      window.open('https://wa.me/','_blank');
-    };
-    <\/script>
+      <button onclick="doShare('https://wa.me/')"
+        style="width:100%;background:#25D366;color:white;border:none;padding:16px;font-size:16px;font-weight:800;cursor:pointer;border-radius:0;">
+        📲 Share Price List via WhatsApp
+      </button>
 
   </body></html>`;
 
@@ -1967,6 +1956,31 @@ function renderPriceList(){
 
 // alias so all callers work
 function updatePriceListScreen(){ renderPriceList(); }
+
+// ── CROSS-PLATFORM WHATSAPP PDF SHARE ──
+// Called from within blob PDF pages via postMessage or direct call
+function doSharePDF(waLink){
+  const isAndroid = /android/i.test(navigator.userAgent);
+  if(isAndroid && navigator.share){
+    // Android: try Web Share API with file
+    try {
+      const htmlContent = document.documentElement.outerHTML;
+      const blob = new Blob([htmlContent], {type:'text/html'});
+      const file = new File([blob], 'satyam_document.html', {type:'text/html'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        navigator.share({files:[file], title:'Satyam Polymats'}).catch(()=>{
+          window.print();
+        });
+        return;
+      }
+    } catch(e){}
+  }
+  // iOS + Android fallback: print → save PDF → open WA
+  window.onafterprint = function(){
+    setTimeout(function(){ window.open(waLink,'_blank'); }, 300);
+  };
+  window.print();
+}
 
 // ── IMPORT PRICE LIST FROM EXCEL (SheetJS) ──
 function importPriceList(event){
@@ -2026,26 +2040,24 @@ function exportCSV(){
   const headers = ['Date','Time','Sales Rep','Customer Name','City','Mobile','GST Number','Contact Person','GPS Coordinates','Visit Notes'];
   let csv = headers.join(',')+'\n';
   fVisits.forEach(v=>{
-    const row = [
-      '"'+( v.date||'')+'"',
-      '"'+( v.time||'')+'"',
-      '"'+( v.user||'')+'"',
-      '"'+( v.customer||'').replace(/"/g,"\'")+'"',
-      '"'+( v.city||'')+'"',
-      '"'+( v.mobile||'')+'"',
-      '"'+( v.gst||'')+'"',
-      '"'+( v.contact||'')+'"',
-      '"'+( v.gps||'')+'"',
-      '"'+( v.notes||'').replace(/"/g,"\'").replace(/\n/g,' ')+'"',
-    ];
-    csv += row.join(',')+'\n';
+    const esc = s => '"'+(s||'').toString().replace(/"/g,"'").replace(/\n/g,' ')+'"';
+    csv += [esc(v.date),esc(v.time),esc(v.user),esc(v.customer),
+            esc(v.city),esc(v.mobile),esc(v.gst),esc(v.contact),
+            esc(v.gps),esc(v.notes)].join(',')+'\n';
   });
-  const blob=new Blob([csv],{type:'text/csv'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;
-  a.download='SatyamPolymats_Visits_'+new Date().toLocaleDateString('en-IN').replace(/\//g,'-')+'.csv';
-  a.click();
+  const blob = new Blob([csv],{type:'text/csv'});
+  const url  = URL.createObjectURL(blob);
+  // Use window.location for download (works on mobile without createElement)
+  const link = document.createElement ? document.createElement('a') : null;
+  if(link){
+    link.href=url;
+    link.download='SatyamPolymats_Visits_'+new Date().toLocaleDateString('en-IN').replace(/\//g,'-')+'.csv';
+    document.body && document.body.appendChild(link);
+    link.click();
+    document.body && document.body.removeChild(link);
+  } else {
+    window.open(url,'_blank');
+  }
   showToast('✅ '+fVisits.length+' visits exported');
 }
 
