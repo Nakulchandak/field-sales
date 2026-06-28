@@ -959,8 +959,7 @@ function saveCheckin(){
     document.getElementById('shopPhotoBox').scrollIntoView({behavior:'smooth'});
     return;
   }
-  showToast('📡 Saving...');
-  // Capture GPS silently then save
+  // Capture GPS in background — save happens immediately
   function doSave(gps){
     const now=new Date();
     const visit={
@@ -993,16 +992,45 @@ function saveCheckin(){
     showToast('✅ Check-in saved for '+customer);
     setTimeout(()=>navTo('homeScreen','nav_home'),1200);
   }
-  // Try GPS with short timeout - always save regardless
+  // Save immediately — GPS is best-effort only
+  // Do NOT wait for GPS — save first, add GPS if available quickly
+  let gpsSaved = false;
+
+  function doSaveWithGPS(gps){
+    if(gpsSaved) return; // prevent double save
+    gpsSaved = true;
+    doSave(gps);
+  }
+
+  // Save immediately with no GPS — user sees confirmation right away
+  showToast('✅ Saving check-in...');
+  doSaveWithGPS('Capturing...');
+
+  // Try to update GPS in background (best effort)
   if(navigator.geolocation){
-    const gpsTimer = setTimeout(()=>doSave('Location timeout'),5000);
     navigator.geolocation.getCurrentPosition(
-      pos=>{ clearTimeout(gpsTimer); doSave(pos.coords.latitude.toFixed(6)+', '+pos.coords.longitude.toFixed(6)); },
-      ()=>{ clearTimeout(gpsTimer); doSave('Location not available'); },
-      {enableHighAccuracy:false, timeout:4000, maximumAge:60000}
+      function(pos){
+        // Update the GPS on the most recent visit record
+        const gpsStr = pos.coords.latitude.toFixed(6)+', '+pos.coords.longitude.toFixed(6);
+        if(visits.length > 0 && visits[0].gps === 'Capturing...'){
+          visits[0].gps = gpsStr;
+          localStorage.setItem('sp_visits', JSON.stringify(visits));
+        }
+      },
+      function(){ 
+        // GPS failed — update record with proper message
+        if(visits.length > 0 && visits[0].gps === 'Capturing...'){
+          visits[0].gps = 'Location not available';
+          localStorage.setItem('sp_visits', JSON.stringify(visits));
+        }
+      },
+      {enableHighAccuracy:false, timeout:10000, maximumAge:60000}
     );
   } else {
-    doSave('GPS not supported');
+    if(visits.length > 0 && visits[0].gps === 'Capturing...'){
+      visits[0].gps = 'GPS not supported';
+      localStorage.setItem('sp_visits', JSON.stringify(visits));
+    }
   }
 }
 
