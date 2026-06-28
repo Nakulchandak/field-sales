@@ -483,6 +483,26 @@ input[type=file]{display:none;}
   <div class="screen" id="pricelistScreen">
     <div style="padding:16px;">
       <div style="font-size:13px;font-weight:700;color:var(--blue);margin-bottom:12px;">Price List</div>
+
+      <!-- SHARE PRICE LIST SECTION -->
+      <div style="background:white;border-radius:12px;padding:14px;box-shadow:var(--shadow);margin-bottom:14px;">
+        <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:10px;">📲 Share Price List via WhatsApp</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:10px;font-weight:600;color:var(--text-light);text-transform:uppercase;display:block;margin-bottom:4px;">Customer Name</label>
+            <input type="text" id="pl_customer" placeholder="e.g. Sharma Stores"
+              style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:13px;">
+          </div>
+          <div>
+            <label style="font-size:10px;font-weight:600;color:var(--text-light);text-transform:uppercase;display:block;margin-bottom:4px;">City <span style="font-weight:400;">(optional)</span></label>
+            <input type="text" id="pl_city" placeholder="e.g. Aurangabad"
+              style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;font-size:13px;">
+          </div>
+        </div>
+        <button class="btn btn-success" onclick="sharePriceListPDF()" style="margin:0;">
+          📲 Share Price List as PDF
+        </button>
+      </div>
       <div style="background:white;border-radius:12px;overflow:hidden;box-shadow:var(--shadow);">
         <table style="width:100%;border-collapse:collapse;font-size:12px;" id="priceListTable">
           <thead>
@@ -1788,6 +1808,146 @@ function adminDeleteVisit(visitId){
 }
 
 function showAdminQuotes(){ renderAdminQuotes(); }
+
+// ── SHARE PRICE LIST AS PDF ──
+function sharePriceListPDF(){
+  const customer = document.getElementById('pl_customer')?.value.trim() || '';
+  const city     = document.getElementById('pl_city')?.value.trim() || '';
+  const now      = new Date();
+  const dateStr  = now.toLocaleDateString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const repName  = currentUser ? currentUser.name : '';
+
+  // Group products by type
+  const nosItems  = PRODUCTS.filter(p=>p.unit==='Nos');
+  const sqftItems = PRODUCTS.filter(p=>p.unit==='Sqft');
+
+  function buildRows(items){
+    return items.map((p,i)=>{
+      const bg = i%2===0 ? '' : 'background:#f0f4ff;';
+      const pack = p.packing ? p.packing+' Pcs/Bld' : '—';
+      return `<tr style="border-bottom:1px solid #e8edf8;${bg}">
+        <td style="padding:8px 10px;font-size:11px;">${p.name}</td>
+        <td style="padding:8px 10px;text-align:center;font-size:11px;color:#555;">${pack}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;color:#1a3a8c;font-size:11px;">₹${p.preGST.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function buildRollRows(items){
+    return items.map((p,i)=>{
+      const bg = i%2===0 ? '' : 'background:#f0f4ff;';
+      return `<tr style="border-bottom:1px solid #e8edf8;${bg}">
+        <td style="padding:8px 10px;font-size:11px;">${p.name}</td>
+        <td style="padding:8px 10px;text-align:center;font-size:11px;color:#555;">Per Sqft</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;color:#1a3a8c;font-size:11px;">₹${p.preGST.toFixed(2)}/SqFt</td>
+      </tr>`;
+    }).join('');
+  }
+
+  const tableHeader = `<tr style="background:#1a3a8c;color:white;">
+    <th style="padding:8px 10px;text-align:left;font-size:11px;">Product Name</th>
+    <th style="padding:8px 10px;text-align:center;font-size:11px;">Std Packing</th>
+    <th style="padding:8px 10px;text-align:right;font-size:11px;">Price (Pre-GST)</th>
+  </tr>`;
+
+  const pdfPage = `<!DOCTYPE html><html><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Price List - Satyam Polymats</title>
+    <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:Arial,sans-serif;padding:16px 16px 90px;font-size:12px;background:#f4f6fb;}
+    .header{display:flex;align-items:center;gap:12px;margin-bottom:12px;background:white;padding:14px;border-radius:12px;}
+    .logo{width:56px;height:56px;border-radius:50%;flex-shrink:0;}
+    .co-name{font-size:15px;font-weight:800;color:#1a3a8c;}
+    .co-addr{font-size:9px;color:#666;line-height:1.7;margin-top:2px;}
+    .divider{border:none;border-top:2px solid #1a3a8c;margin:10px 0;}
+    .to-section{background:white;border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:flex-start;}
+    .to-label{font-size:10px;color:#888;font-weight:600;text-transform:uppercase;margin-bottom:3px;}
+    .to-name{font-size:14px;font-weight:700;color:#1a1a2e;}
+    .to-city{font-size:11px;color:#888;}
+    .date-box{text-align:right;}
+    .date-box .dl{font-size:10px;color:#888;}
+    .date-box .dv{font-size:13px;font-weight:700;color:#1a3a8c;}
+    .section-title{font-size:12px;font-weight:700;color:#1a3a8c;margin:14px 0 6px;padding-left:4px;}
+    table{width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;}
+    .note{font-size:9.5px;color:#666;margin-top:12px;padding:10px 12px;background:white;border-radius:8px;line-height:1.6;}
+    .footer{margin-top:14px;text-align:center;font-size:10px;color:#888;}
+    .action-bar{position:fixed;bottom:0;left:0;right:0;background:#1a3a8c;padding:12px 14px;display:flex;gap:8px;z-index:999;}
+    .action-bar a{flex:1;display:block;text-align:center;padding:12px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none;}
+    .step1{background:#1a3a8c;color:white;border:2px solid white;}
+    .step2{background:#25D366;color:white;}
+    .inst{text-align:center;font-size:10px;color:rgba(255,255,255,0.8);padding:6px 14px 0;}
+    @media print{.action-bar,.inst{display:none;}body{padding-bottom:0;background:white;}}
+    </style>
+  </head><body>
+
+    <div class="header">
+      <img class="logo" src="${LOGO}" alt="Logo">
+      <div>
+        <div class="co-name">Satyam Polymats Pvt Ltd</div>
+        <div class="co-addr">
+          Shardanand, Opp Telephone Ex, Ajab Nagar<br>
+          Kranti Chowk, Ch Sambhajinagar 431001, MH<br>
+          📱 +91 240 2337989 &nbsp;|&nbsp; ✉️ sales@satyamgroup.info<br>
+          🌐 www.satyamgroup.info
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div style="text-align:center;font-weight:800;font-size:13px;color:#1a3a8c;letter-spacing:1px;margin-bottom:10px;">PRICE LIST</div>
+
+    <div class="to-section">
+      <div>
+        <div class="to-label">To</div>
+        <div class="to-name">${customer || 'Valued Customer'}</div>
+        ${city ? '<div class="to-city">'+city+'</div>' : ''}
+      </div>
+      <div class="date-box">
+        <div class="dl">Date</div>
+        <div class="dv">${dateStr}</div>
+        ${repName ? '<div style="font-size:10px;color:#888;margin-top:4px;">by '+repName+'</div>' : ''}
+      </div>
+    </div>
+
+    ${nosItems.length>0 ? `
+    <div class="section-title">📦 Mats & Bags</div>
+    <table><thead>${tableHeader}</thead><tbody>${buildRows(nosItems)}</tbody></table>
+    ` : ''}
+
+    ${sqftItems.length>0 ? `
+    <div class="section-title">🔄 Rolls (SqFt Pricing)</div>
+    <table><thead>${tableHeader}</thead><tbody>${buildRollRows(sqftItems)}</tbody></table>
+    ` : ''}
+
+    <div class="note">
+      <strong>Notes:</strong><br>
+      • All prices are <strong>Pre-GST</strong>. GST @ 5% extra as applicable.<br>
+      • HSN Code: 46019900<br>
+      • For rolls: Price per SqFt = Width (Ft) × Length (Ft) × Rate<br>
+      • Standard packing applies. No partial bundles.<br>
+      • Prices valid as on ${dateStr}. Subject to change without notice.<br>
+      • Payment: Advance | Dispatch within 3 days | Transport extra at actual.<br>
+      <strong style="color:#cc2222;">⚠️ NO CASH PAYMENT ACCEPTED</strong>
+    </div>
+
+    <div class="footer">
+      Satyam Polymats Pvt Ltd &nbsp;|&nbsp; satyamgroup.info
+    </div>
+
+    <div class="action-bar">
+      <a href="#" onclick="window.print();return false;" class="step1">💾 Step 1: Save PDF</a>
+      <a href="${customer ? 'https://wa.me/?text=Please+find+our+price+list+attached.' : 'https://wa.me/'}" class="step2">📲 Step 2: WhatsApp</a>
+    </div>
+    <div class="inst">Save PDF first → attach in WhatsApp → send to customer</div>
+
+  </body></html>`;
+
+  const blob = new Blob([pdfPage], {type:'text/html'});
+  const url  = URL.createObjectURL(blob);
+  window.location.href = url;
+}
 
 // ── PRICE LIST RENDER ──
 function renderPriceList(){
