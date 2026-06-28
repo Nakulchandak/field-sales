@@ -940,12 +940,25 @@ function previewPhoto(inputId, previewId, boxId){
   if(!input.files||!input.files[0]) return;
   const reader=new FileReader();
   reader.onload=e=>{
-    preview.src=e.target.result;
-    preview.style.display='block';
-    box.style.borderColor='var(--success)';
-    box.innerHTML='<div style="color:var(--success);font-size:13px;font-weight:600;">✅ Photo captured</div>';
-    if(inputId==='shopPhotoInput') shopPhotoB64=e.target.result;
-    if(inputId==='cardPhotoInput') cardPhotoB64=e.target.result;
+    // Compress image to max 600px width, quality 0.5 to stay within localStorage limits
+    const img=new Image();
+    img.onload=function(){
+      const MAX=600;
+      let w=img.width, h=img.height;
+      if(w>MAX){ h=Math.round(h*MAX/w); w=MAX; }
+      const canvas=document.createElement('canvas');
+      canvas.width=w; canvas.height=h;
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,w,h);
+      const compressed=canvas.toDataURL('image/jpeg',0.5);
+      preview.src=compressed;
+      preview.style.display='block';
+      box.style.borderColor='var(--success)';
+      box.innerHTML='<div style="color:var(--success);font-size:13px;font-weight:600;">✅ Photo captured</div>';
+      if(inputId==='shopPhotoInput') shopPhotoB64=compressed;
+      if(inputId==='cardPhotoInput') cardPhotoB64=compressed;
+    };
+    img.src=e.target.result;
   };
   reader.readAsDataURL(input.files[0]);
 }
@@ -978,7 +991,24 @@ function saveCheckin(){
       timestamp:now.toISOString()
     };
     visits.unshift(visit);
-    localStorage.setItem('sp_visits',JSON.stringify(visits));
+    // Save visits WITHOUT photos first (always safe)
+    const visitsNoPhoto = visits.map(v=>({...v, shopPhoto:null, cardPhoto:null}));
+    try {
+      localStorage.setItem('sp_visits', JSON.stringify(visitsNoPhoto));
+    } catch(e){
+      showToast('⚠️ Storage full — exporting old data first');
+      // Emergency: keep only last 50 visits
+      const trimmed = visitsNoPhoto.slice(0,50);
+      try { localStorage.setItem('sp_visits', JSON.stringify(trimmed)); } catch(e2){}
+    }
+    // Save photos separately with individual keys (more resilient)
+    try {
+      if(visit.shopPhoto) localStorage.setItem('sp_photo_shop_'+visit.id, visit.shopPhoto);
+      if(visit.cardPhoto) localStorage.setItem('sp_photo_card_'+visit.id, visit.cardPhoto);
+    } catch(e){
+      // Photo storage full — photos not saved but visit data is safe
+      console.log('Photo storage full — visit saved without photo');
+    }
     ['ci_customer','ci_gst','ci_contact','ci_mobile','ci_city','ci_notes'].forEach(id=>document.getElementById(id).value='');
     shopPhotoB64=null; cardPhotoB64=null;
     document.getElementById('shopPhotoPreview').style.display='none';
@@ -990,7 +1020,16 @@ function saveCheckin(){
     populateCustomerLists();
     renderTodayVisits();
     showToast('✅ Check-in saved for '+customer);
-    setTimeout(()=>navTo('homeScreen','nav_home'),1200);
+    // Navigate home immediately — no delay needed
+    setTimeout(function(){
+      document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+      const hs = document.getElementById('homeScreen');
+      if(hs) hs.classList.add('active');
+      document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+      const nh = document.getElementById('nav_home');
+      if(nh) nh.classList.add('active');
+      window.scrollTo(0,0);
+    }, 800);
   }
   // Save immediately — GPS is best-effort only
   // Do NOT wait for GPS — save first, add GPS if available quickly
@@ -1789,7 +1828,11 @@ function saveEditModal(){
     quotations[idx].mobile=get('em_mobile');
     quotations[idx].gst=get('em_gst');
     quotations[idx].edited=true;
-    localStorage.setItem('sp_quotes',JSON.stringify(quotations));
+    try {
+      localStorage.setItem('sp_quotes',JSON.stringify(quotations));
+    } catch(e){
+      showToast('⚠️ Storage full — please export data from Admin Dashboard');
+    }
     closeEditModal();
     renderAdminQuotes();
     showToast('Quotation updated');
@@ -2113,14 +2156,14 @@ function renderTodayVisits(){
 // ── HELP DOCUMENTS ──
 function openHelp(){
   // Opens Sales Rep Training Guide PDF from GitHub
-  const url = 'https://raw.githubusercontent.com/Nakulchandak/field-sales/main/docs/SalesRep_Training_Guide.pdf';
+  const url = 'https://nakulchandak.github.io/field-sales/docs/SalesRep_Training_Guide.pdf';
   showToast('Opening Training Guide...');
   window.open(url, '_blank');
 }
 
 function openAdminManual(){
   // Opens Admin Technical Manual PDF from GitHub
-  const url = 'https://raw.githubusercontent.com/Nakulchandak/field-sales/main/docs/Admin_Technical_Manual.pdf';
+  const url = 'https://nakulchandak.github.io/field-sales/docs/Admin_Technical_Manual.pdf';
   showToast('Opening Admin Manual...');
   window.open(url, '_blank');
 }
