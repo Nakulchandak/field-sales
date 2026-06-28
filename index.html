@@ -148,7 +148,8 @@ input[type=file]{display:none;}
 .qp-meta-right{text-align:right;}
 .qp-meta-right .qno{font-size:13px;font-weight:700;color:var(--blue);}
 .qp-meta-right .qdate{font-size:11px;color:var(--text-light);}
-.qp-table{width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;}
+.qp-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:10px;}
+.qp-table{width:100%;border-collapse:collapse;font-size:10.5px;min-width:320px;}
 .qp-table th{background:var(--blue);color:white;padding:6px 5px;text-align:left;font-size:9.5px;}
 .qp-table td{padding:6px 5px;border-bottom:1px solid var(--border);}
 .qp-table tr:nth-child(even) td{background:#f0f4ff;}
@@ -254,15 +255,15 @@ input[type=file]{display:none;}
     </button>
     <!-- Admin PIN entry (hidden by default) -->
     <div id="adminPinBox" style="display:none;margin-top:14px;">
-      <div style="font-size:13px;color:var(--text-light);margin-bottom:8px;text-align:center;">Enter Admin PIN</div>
-      <div style="display:flex;gap:8px;">
-        <input type="password" id="adminPin" placeholder="••••" maxlength="6"
-          style="flex:1;padding:12px;border:2px solid var(--border);border-radius:10px;font-size:18px;text-align:center;letter-spacing:6px;"
-          onkeydown="if(event.key==='Enter')checkAdminPin()">
-        <button onclick="checkAdminPin()"
-          style="background:var(--blue);color:white;border:none;border-radius:10px;padding:12px 18px;font-weight:700;font-size:14px;cursor:pointer;">→</button>
-      </div>
-      <div id="adminPinErr" style="color:var(--red);font-size:12px;text-align:center;margin-top:6px;display:none;">Incorrect PIN. Try again.</div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:10px;text-align:center;">Enter Admin PIN</div>
+      <input type="password" id="adminPin" placeholder="Enter PIN" maxlength="6"
+        style="width:100%;padding:14px;border:2px solid var(--border);border-radius:10px;font-size:22px;text-align:center;letter-spacing:8px;margin-bottom:10px;"
+        onkeydown="if(event.key==='Enter')checkAdminPin()">
+      <button onclick="checkAdminPin()"
+        style="width:100%;background:var(--blue);color:white;border:none;border-radius:10px;padding:14px;font-weight:700;font-size:16px;cursor:pointer;">
+        Login →
+      </button>
+      <div id="adminPinErr" style="color:var(--red);font-size:12px;text-align:center;margin-top:8px;display:none;">Incorrect PIN. Try again.</div>
     </div>
   </div>
 </div>
@@ -931,7 +932,7 @@ function saveCheckin(){
     document.getElementById('shopPhotoBox').scrollIntoView({behavior:'smooth'});
     return;
   }
-  showToast('📡 Getting location & saving...');
+  showToast('📡 Saving...');
   // Capture GPS silently then save
   function doSave(gps){
     const now=new Date();
@@ -965,11 +966,13 @@ function saveCheckin(){
     showToast('✅ Check-in saved for '+customer);
     setTimeout(()=>navTo('homeScreen','nav_home'),1200);
   }
+  // Try GPS with short timeout - always save regardless
   if(navigator.geolocation){
+    const gpsTimer = setTimeout(()=>doSave('Location timeout'),5000);
     navigator.geolocation.getCurrentPosition(
-      pos=>doSave(pos.coords.latitude.toFixed(6)+', '+pos.coords.longitude.toFixed(6)),
-      ()=>doSave('Location not available'),
-      {enableHighAccuracy:true,timeout:8000}
+      pos=>{ clearTimeout(gpsTimer); doSave(pos.coords.latitude.toFixed(6)+', '+pos.coords.longitude.toFixed(6)); },
+      ()=>{ clearTimeout(gpsTimer); doSave('Location not available'); },
+      {enableHighAccuracy:false, timeout:4000, maximumAge:60000}
     );
   } else {
     doSave('GPS not supported');
@@ -1119,19 +1122,29 @@ function calcTotals(){
   if(addedItems.length===0){document.getElementById('totalsBox').style.display='none';return;}
   let subtotal=0,totalDisc=0;
   addedItems.forEach(item=>{
-    const pcs=item.bundles*item.packing;
-    const raw=pcs*item.preGST;
-    const disc=raw*(item.discount/100);
+    const raw = item.unit==='Sqft'
+      ? (item.width||0)*(item.bundles||0)*item.preGST
+      : (item.bundles||0)*(item.packing||0)*item.preGST;
+    const disc = discMode==='itemwise' ? raw*((item.discount||0)/100) : 0;
     subtotal+=raw; totalDisc+=disc;
   });
+  // Apply overall discount if mode=overall
+  if(discMode==='overall'){
+    const overallPct=parseFloat(document.getElementById('q_overall_disc')?.value)||0;
+    totalDisc=subtotal*(overallPct/100);
+  }
   const afterDisc=subtotal-totalDisc;
   const gstAmt=afterDisc*0.05;
   const total=afterDisc+gstAmt;
+  const hasDisc = totalDisc>0;
   document.getElementById('totalsBox').style.display='block';
   document.getElementById('t_subtotal').textContent='₹'+subtotal.toFixed(2);
   document.getElementById('t_discount').textContent='-₹'+totalDisc.toFixed(2);
   document.getElementById('t_afterdisc').textContent='₹'+afterDisc.toFixed(2);
-  document.getElementById('t_gst').textContent='₹'+gst.toFixed(2);
+  // Show/hide discount rows
+  const discRow = document.getElementById('totalsBox').querySelectorAll('.total-row');
+  if(discRow.length>=3){ discRow[1].style.display=hasDisc?'flex':'none'; discRow[2].style.display=hasDisc?'flex':'none'; }
+  document.getElementById('t_gst').textContent='₹'+gstAmt.toFixed(2);
   document.getElementById('t_total').textContent='₹'+total.toFixed(2);
 }
 
@@ -1230,48 +1243,39 @@ function generateQuotation(){
 // ── EDIT QUOTATION ──
 function editCurrentQuote(){
   if(!currentQuote) return;
-  const idx=quotations.findIndex(q=>q.qNo===currentQuote.qNo);
-  if(idx<0) return;
-  editingQuoteIdx=idx;
-  const q=quotations[idx];
-  document.getElementById('q_customer').value=q.customer;
-  document.getElementById('q_city').value=q.city||'';
-  document.getElementById('q_mobile').value=q.mobile||'';
-  if(document.getElementById('q_gst')) document.getElementById('q_gst').value=q.gst||'';
-  if(document.getElementById('q_contact')) document.getElementById('q_contact').value=q.contact||'';
-  addedItems=q.items.map(i=>({...i}));
-  renderAddedItems();
-  addedItems.forEach(item=>{
-    if(document.getElementById('bld_'+item.id)) document.getElementById('bld_'+item.id).value=item.bundles;
-    if(document.getElementById('disc_'+item.id)) document.getElementById('disc_'+item.id).value=item.discount||0;
-    updateItem(item.id);
-  });
-  calcTotals();
-  navTo('quotationScreen','nav_quote');
-  showToast('Editing quote '+q.qNo);
+  editFromHistory(currentQuote.qNo);
 }
 
 function editFromHistory(qNo){
   const idx=quotations.findIndex(q=>q.qNo===qNo);
-  if(idx<0) return;
+  if(idx<0){showToast('Quote not found');return;}
   currentQuote=quotations[idx];
   editingQuoteIdx=idx;
   const q=quotations[idx];
-  document.getElementById('q_customer').value=q.customer;
-  document.getElementById('q_city').value=q.city||'';
-  document.getElementById('q_mobile').value=q.mobile||'';
-  if(document.getElementById('q_gst')) document.getElementById('q_gst').value=q.gst||'';
-  if(document.getElementById('q_contact')) document.getElementById('q_contact').value=q.contact||'';
-  addedItems=q.items.map(i=>({...i}));
-  renderAddedItems();
-  addedItems.forEach(item=>{
-    if(document.getElementById('bld_'+item.id)) document.getElementById('bld_'+item.id).value=item.bundles;
-    if(document.getElementById('disc_'+item.id)) document.getElementById('disc_'+item.id).value=item.discount||0;
-    updateItem(item.id);
-  });
-  calcTotals();
+  // Navigate first so form elements exist in DOM
   navTo('quotationScreen','nav_quote');
-  showToast('Editing quote '+q.qNo);
+  setTimeout(()=>{
+    document.getElementById('q_customer').value=q.customer||'';
+    document.getElementById('q_city').value=q.city||'';
+    document.getElementById('q_mobile').value=q.mobile||'';
+    const qgst=document.getElementById('q_gst'); if(qgst) qgst.value=q.gstNo||q.gst||'';
+    const qcon=document.getElementById('q_contact'); if(qcon) qcon.value=q.contact||'';
+    addedItems=q.items.map(i=>({...i, showDisc:i.discount>0}));
+    renderAddedItems();
+    setTimeout(()=>{
+      addedItems.forEach(item=>{
+        const bld=document.getElementById('bld_'+item.id);
+        const len=document.getElementById('len_'+item.id);
+        const disc=document.getElementById('disc_'+item.id);
+        if(bld) bld.value=item.bundles||'';
+        if(len) len.value=item.bundles||'';
+        if(disc) disc.value=item.discount||0;
+        updateItem(item.id);
+      });
+      calcTotals();
+    },50);
+    showToast('Editing quote '+q.qNo);
+  },50);
 }
 
 // ── RENDER PREVIEW ──
@@ -1283,16 +1287,16 @@ function renderPreview(q){
     const isRoll = i.unit==='Sqft';
     const stdPack = isRoll ? 'Per Sqft' : (i.packing?i.packing+' Pcs/Bld':'—');
     const qtyCol  = isRoll
-      ? `${i.length} Ft<br><small style="color:#888;">${(i.width*i.length).toFixed(1)} Sqft</small>`
+      ? `${i.width}Ft×${i.bundles}Ft<br><small style="color:#888;">${(i.width*i.bundles).toFixed(1)} SqFt</small>`
       : `${i.bundles} Bld<br><small style="color:#888;">${i.pcs} Pcs</small>`;
-    const rateLabel = isRoll ? `₹${i.preGST.toFixed(2)}/sqft` : `₹${i.preGST.toFixed(2)}/pc`;
+    const rateLabel = isRoll ? `₹${i.preGST.toFixed(2)}/SqFt` : `₹${i.preGST.toFixed(2)}/pc`;
     return `<tr ${rowBg}>
-      <td><strong>${i.name}</strong></td>
-      <td style="text-align:center;font-size:9.5px;">${stdPack}</td>
-      <td style="text-align:center;">${qtyCol}</td>
-      <td style="text-align:right;">${rateLabel}</td>
+      <td style="font-size:10px;"><strong>${i.name}</strong></td>
+      <td style="text-align:center;font-size:9px;">${stdPack}</td>
+      <td style="text-align:center;font-size:9.5px;">${qtyCol}</td>
+      <td style="text-align:right;font-size:9.5px;">${rateLabel}</td>
       ${discCell}
-      <td style="text-align:right;font-weight:600;">₹${i.netAmt.toFixed(2)}</td>
+      <td style="text-align:right;font-weight:700;font-size:10px;">₹${i.netAmt.toFixed(2)}</td>
     </tr>`;
   }).join('');
   const discHeader = hasDiscount ? '<th style="text-align:center;">Disc%</th>' : '';
@@ -1330,20 +1334,21 @@ function renderPreview(q){
     </div>
 
     <!-- ITEMS TABLE -->
+    <div class="qp-table-wrap">
     <table class="qp-table">
       <thead>
         <tr>
-          <th>Product Name</th>
-          <th style="text-align:center;">Std Packing</th>
-          <th style="text-align:center;">Blds</th>
+          <th>Product</th>
+          <th style="text-align:center;">Packing</th>
           <th style="text-align:center;">Qty</th>
           <th style="text-align:right;">Rate</th>
           ${discHeader}
-          <th style="text-align:right;">Amount</th>
+          <th style="text-align:right;">Amt</th>
         </tr>
       </thead>
       <tbody>${itemRows}</tbody>
     </table>
+    </div>
 
     <!-- TOTALS -->
     <div class="qp-totals">
@@ -1426,7 +1431,8 @@ function shareWhatsAppPDF(){
     .qp-meta-right{text-align:right;}
     .qno{font-size:13px;font-weight:700;color:#1a3a8c;}
     .qdate{font-size:11px;color:#888;}
-    .qp-table{width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;}
+    .qp-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:10px;}
+.qp-table{width:100%;border-collapse:collapse;font-size:10.5px;min-width:320px;}
     .qp-table th{background:#1a3a8c;color:white;padding:6px 5px;text-align:left;font-size:9.5px;}
     .qp-table td{padding:6px 5px;border-bottom:1px solid #eee;}
     .qp-table tr:nth-child(even) td{background:#f0f4ff;}
@@ -1451,15 +1457,22 @@ function shareWhatsAppPDF(){
   </head><body>
     ${printContent}
     <div class="action-bar">
-      <a href="${waLink}" class="wa-btn">📲 Open WhatsApp</a>
-      <a href="#" onclick="window.print();return false;" class="back-btn-pdf">💾 Save PDF</a>
+      <a href="#" onclick="window.print();return false;" class="wa-btn" style="background:#1a3a8c;">
+        💾 Step 1: Save as PDF
+      </a>
+      <a href="${waLink}" class="back-btn-pdf" style="background:#25D366;color:white;">
+        📲 Step 2: Send on WhatsApp
+      </a>
+    </div>
+    <div style="text-align:center;font-size:11px;color:#888;padding:8px 16px 0;">
+      Save PDF first → then open WhatsApp → attach the saved PDF
     </div>
   </body></html>`;
 
-  // Write to a blob URL - no popup permission needed
+  // Blob URL approach - works without popup permission
   const blob = new Blob([pdfPage], {type:'text/html'});
-  const url = URL.createObjectURL(blob);
-  window.location.href = url;
+  const blobUrl = URL.createObjectURL(blob);
+  window.location.href = blobUrl;
 }
 
 // ── HISTORY ──
@@ -1514,16 +1527,7 @@ function viewQuote(qNo){
   navTo('previewScreen','');
 }
 
-function deleteQuote(qNo){
-  if(!confirm('Delete quotation '+qNo+'? This cannot be undone.')) return;
-  quotations=quotations.filter(q=>q.qNo!==qNo);
-  localStorage.setItem('sp_quotes',JSON.stringify(quotations));
-  showToast('Quotation '+qNo+' deleted');
-  renderHistory();
-  if(currentUser && currentUser.role==='Admin') renderAdmin();
-}
 
-// ── ADMIN ──
 function switchAdminTab(tabId, btn){
   document.querySelectorAll('.admin-tab-content').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.admin-tab').forEach(b=>b.classList.remove('active'));
